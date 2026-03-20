@@ -106,8 +106,8 @@ def main():
                         help='Mirror for downloading papers from sci-hub. If not set, it is selected automatically')
     parser.add_argument('--annas-archive-mirror', default=None, type=str,
                         help='Mirror for downloading papers from Annas Archive (SciDB). If not set, https://annas-archive.se is used')
-    parser.add_argument('--scholar-results', default=10, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                        help='Downloads the first x results for each scholar page(default/max=10)')
+    parser.add_argument('--scholar-results', default=10, type=int,
+                        help='Results per Scholar page (default 10, max 10 — set scholar-pages to fetch more total results)')
     parser.add_argument('--proxy', nargs='+', default=[],
                         help='Use proxychains, provide a seperated list of proxies to use.Please specify the argument al the end')
     parser.add_argument('--single-proxy', type=str, default=None,
@@ -116,6 +116,14 @@ def main():
                         help='First three digits of the chrome version installed on your machine. If provided, selenium will be used for scholar search. It helps avoid bot detection but chrome must be installed.')
     parser.add_argument('--use-doi-as-filename', action='store_true', default=False,
                         help='Use DOIs as output file names')
+    parser.add_argument('--pubmed-query', type=str, default=None,
+                        help='Boolean query for PubMed (supports AND, OR, NOT, field tags e.g. [ti], [tiab], [mh])')
+    parser.add_argument('--pubmed-ids', type=str, default=None,
+                        help='Comma-separated PubMed IDs (PMIDs) to convert to DOIs and download')
+    parser.add_argument('--biorxiv-query', type=str, default=None,
+                        help='Boolean query to search bioRxiv preprints via Europe PMC')
+    parser.add_argument('--pubmed-results', type=int, default=50,
+                        help='Maximum results from PubMed or bioRxiv search (default 50, max 500)')
     args = parser.parse_args()
 
     if args.single_proxy is not None:
@@ -129,13 +137,16 @@ def main():
         pchain = args.proxy
         proxy(pchain)
 
-    if args.query is None and args.doi_file is None and args.doi is None and args.cites is None:
-        print("Error, provide at least one of the following arguments: --query, --file, or --cites")
+    _sources = [
+        args.query, args.doi_file, args.doi, args.cites,
+        args.pubmed_query, args.pubmed_ids, args.biorxiv_query,
+    ]
+    if all(s is None for s in _sources):
+        print("Error: provide at least one of --query, --doi-file, --doi, --cites, "
+              "--pubmed-query, --pubmed-ids, or --biorxiv-query")
         sys.exit()
-
-    if (args.query is not None and args.doi_file is not None) or (args.query is not None and args.doi is not None) or (
-            args.doi is not None and args.doi_file is not None):
-        print("Error: Only one option between '--query', '--doi-file' and '--doi' can be used")
+    if sum(s is not None for s in _sources) > 1:
+        print("Error: only one search/download source may be used at a time")
         sys.exit()
 
     if args.dwn_dir is None:
@@ -189,6 +200,43 @@ def main():
 
     if args.doi is not None:
         DOIs = [args.doi]
+
+    if args.pubmed_query is not None:
+        from .BioSearch import search_pubmed
+        print("Searching PubMed: {}".format(args.pubmed_query))
+        records = search_pubmed(args.pubmed_query, max_results=min(args.pubmed_results, 500))
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        skipped = len(records) - len(DOIs)
+        if skipped:
+            print("Warning: {} records skipped (no DOI found).".format(skipped))
+        if not DOIs:
+            print("Error: No papers with DOIs found for the given PubMed query.")
+            sys.exit()
+        print("Found {} papers with DOIs.".format(len(DOIs)))
+
+    if args.pubmed_ids is not None:
+        from .BioSearch import pmids_to_records
+        pmids = [p.strip() for p in args.pubmed_ids.replace(',', ' ').split() if p.strip()]
+        print("Converting {} PubMed IDs to DOIs...".format(len(pmids)))
+        records = pmids_to_records(pmids)
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        skipped = len(records) - len(DOIs)
+        if skipped:
+            print("Warning: {} PMIDs had no DOI and will be skipped.".format(skipped))
+        if not DOIs:
+            print("Error: None of the provided PubMed IDs could be resolved to a DOI.")
+            sys.exit()
+        print("Resolved {} DOIs.".format(len(DOIs)))
+
+    if args.biorxiv_query is not None:
+        from .BioSearch import search_biorxiv
+        print("Searching bioRxiv: {}".format(args.biorxiv_query))
+        records = search_biorxiv(args.biorxiv_query, max_results=min(args.pubmed_results, 500))
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        if not DOIs:
+            print("Error: No bioRxiv preprints found for the given query.")
+            sys.exit()
+        print("Found {} bioRxiv preprints.".format(len(DOIs)))
 
     max_dwn = None
     max_dwn_type = None
