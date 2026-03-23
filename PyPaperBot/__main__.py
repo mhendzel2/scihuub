@@ -269,6 +269,9 @@ def main():
             DOIs.extend(new_dois)
             print("Resolved {} DOIs from PMIDs.".format(len(new_dois)))
 
+        seen = set()
+        DOIs = [doi for doi in DOIs if not (doi in seen or seen.add(doi))]
+
         if not DOIs:
             print("Error: No valid DOIs or PMIDs/Queries found in the mixed file.")
             sys.exit()
