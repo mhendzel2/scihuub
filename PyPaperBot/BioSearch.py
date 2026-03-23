@@ -24,7 +24,7 @@ def search_pubmed(query, max_results=50):
     Returns a list of record dicts with keys:
         pmid, doi, title, year, authors, journal
     """
-    max_results = max(1, min(int(max_results), 500))
+    max_results = max(1, min(int(max_results), 100000))
     resp = requests.get(NCBI_ESEARCH, params={
         "db": "pubmed",
         "term": query,
@@ -49,14 +49,23 @@ def pmids_to_records(pmids):
     batch_size = 200
     for i in range(0, len(pmids), batch_size):
         batch = pmids[i: i + batch_size]
-        resp = requests.get(NCBI_EFETCH, params={
-            "db": "pubmed",
-            "id": ",".join(batch),
-            "rettype": "xml",
-            "retmode": "xml",
-        }, timeout=60)
-        resp.raise_for_status()
-        records.extend(_parse_pubmed_xml(resp.text))
+        for attempt in range(3):
+            try:
+                resp = requests.get(NCBI_EFETCH, params={
+                    "db": "pubmed",
+                    "id": ",".join(batch),
+                    "rettype": "xml",
+                    "retmode": "xml",
+                }, timeout=60)
+                resp.raise_for_status()
+                records.extend(_parse_pubmed_xml(resp.text))
+                break
+            except requests.exceptions.RequestException as e:
+                print(f"Warning: Failed to fetch batch {i//batch_size + 1} from NCBI. Attempt {attempt + 1}/3... Error: {e}")
+                time.sleep(2 ** attempt)
+                if attempt == 2:
+                    print(f"Failed to fetch batch {i//batch_size + 1} after 3 attempts.")
+
         if i + batch_size < len(pmids):
             time.sleep(0.4)  # stay within NCBI's 3 req/s limit for unauthenticated use
     return records
@@ -119,7 +128,7 @@ def search_biorxiv(query, max_results=50):
     Returns a list of record dicts with keys:
         pmid, doi, title, year, authors, journal
     """
-    max_results = max(1, min(int(max_results), 500))
+    max_results = max(1, min(int(max_results), 100000))
     full_query = "({}) AND SRC:PPR AND PUBLISHER:bioRxiv".format(query)
     resp = requests.get(EUROPEPMC_SEARCH, params={
         "query": full_query,

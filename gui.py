@@ -121,6 +121,7 @@ class PyPaperBotGUI(ctk.CTk):
         self.tab_pubmed = self.tabs.add("PubMed Search")
         self.tab_biorxiv = self.tabs.add("bioRxiv Search")
         self.tab_pmid = self.tabs.add("PubMed IDs")
+        self.tab_mixed = self.tabs.add("Mixed Batch")
 
         self._build_query_tab()
         self._build_doi_tab()
@@ -128,6 +129,7 @@ class PyPaperBotGUI(ctk.CTk):
         self._build_pubmed_tab()
         self._build_biorxiv_tab()
         self._build_pmid_tab()
+        self._build_mixed_tab()
 
     def _build_query_tab(self):
         self.tab_query.grid_columnconfigure(0, weight=1)
@@ -140,7 +142,7 @@ class PyPaperBotGUI(ctk.CTk):
 
         max_row = ctk.CTkFrame(self.tab_query, fg_color="transparent")
         max_row.grid(row=1, column=0, columnspan=2, padx=12, pady=8, sticky="w")
-        ctk.CTkLabel(max_row, text="Max papers (1\u2013500, default 50):").pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(max_row, text="Max papers (1\u2013100000, default 50):").pack(side="left", padx=(0, 8))
         self.query_max_entry = ctk.CTkEntry(max_row, width=80, placeholder_text="50")
         self.query_max_entry.pack(side="left")
 
@@ -190,6 +192,30 @@ class PyPaperBotGUI(ctk.CTk):
         )
         note.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 20), sticky="w")
 
+    def _build_mixed_tab(self):
+        self.tab_mixed.grid_columnconfigure(0, weight=1)
+
+        self.mixed_file_entry = ctk.CTkEntry(
+            self.tab_mixed,
+            placeholder_text="Select a .txt or .csv file containing DOIs, PMIDs, and Queries",
+        )
+        self.mixed_file_entry.grid(row=0, column=0, padx=(12, 8), pady=(24, 12), sticky="ew")
+
+        self.mixed_file_button = ctk.CTkButton(
+            self.tab_mixed,
+            text="Browse",
+            width=110,
+            command=self.select_mixed_file,
+        )
+        self.mixed_file_button.grid(row=0, column=1, padx=(8, 12), pady=(24, 12), sticky="e")
+
+        note = ctk.CTkLabel(
+            self.tab_mixed,
+            text="Accepts a mixed list of DOIs, PMIDs (numbers only), and PubMed Queries (one per line).",
+            justify="left",
+        )
+        note.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 20), sticky="w")
+
     def _build_pubmed_tab(self):
         self.tab_pubmed.grid_columnconfigure(0, weight=1)
 
@@ -206,7 +232,7 @@ class PyPaperBotGUI(ctk.CTk):
 
         results_row = ctk.CTkFrame(self.tab_pubmed, fg_color="transparent")
         results_row.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="w")
-        ctk.CTkLabel(results_row, text="Max results (1–500, default 50):").pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(results_row, text="Max results (1–100000, default 50):").pack(side="left", padx=(0, 8))
         self.pubmed_results_entry = ctk.CTkEntry(results_row, width=80, placeholder_text="50")
         self.pubmed_results_entry.pack(side="left")
 
@@ -229,7 +255,7 @@ class PyPaperBotGUI(ctk.CTk):
 
         results_row = ctk.CTkFrame(self.tab_biorxiv, fg_color="transparent")
         results_row.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="w")
-        ctk.CTkLabel(results_row, text="Max results (1–500, default 50):").pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(results_row, text="Max results (1–100000, default 50):").pack(side="left", padx=(0, 8))
         self.biorxiv_results_entry = ctk.CTkEntry(results_row, width=80, placeholder_text="50")
         self.biorxiv_results_entry.pack(side="left")
 
@@ -363,6 +389,12 @@ class PyPaperBotGUI(ctk.CTk):
             self.file_entry.delete(0, "end")
             self.file_entry.insert(0, file_path)
 
+    def select_mixed_file(self):
+        file_path = fd.askopenfilename(filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv")])
+        if file_path:
+            self.mixed_file_entry.delete(0, "end")
+            self.mixed_file_entry.insert(0, file_path)
+
     def append_log(self, message):
         try:
             self.console.configure(state="normal")
@@ -444,10 +476,10 @@ class PyPaperBotGUI(ctk.CTk):
             max_raw = self.query_max_entry.get().strip()
             try:
                 max_papers = int(max_raw) if max_raw else 50
-                if not 1 <= max_papers <= 500:
+                if not 1 <= max_papers <= 100000:
                     raise ValueError()
             except ValueError:
-                raise ValueError("Max papers must be a whole number between 1 and 500.")
+                raise ValueError("Max papers must be a whole number between 1 and 100000.")
 
             import math
             num_pages = math.ceil(max_papers / 10)
@@ -482,10 +514,10 @@ class PyPaperBotGUI(ctk.CTk):
             if results_raw:
                 try:
                     n = int(results_raw)
-                    if not 1 <= n <= 500:
+                    if not 1 <= n <= 100000:
                         raise ValueError()
                 except ValueError:
-                    raise ValueError("PubMed max results must be a whole number between 1 and 500.")
+                    raise ValueError("PubMed max results must be a whole number between 1 and 100000.")
                 cli_args.append("--pubmed-results={}".format(n))
 
         elif active_tab == "bioRxiv Search":
@@ -497,10 +529,10 @@ class PyPaperBotGUI(ctk.CTk):
             if results_raw:
                 try:
                     n = int(results_raw)
-                    if not 1 <= n <= 500:
+                    if not 1 <= n <= 100000:
                         raise ValueError()
                 except ValueError:
-                    raise ValueError("bioRxiv max results must be a whole number between 1 and 500.")
+                    raise ValueError("bioRxiv max results must be a whole number between 1 and 100000.")
                 cli_args.append("--pubmed-results={}".format(n))
 
         elif active_tab == "PubMed IDs":
@@ -511,6 +543,14 @@ class PyPaperBotGUI(ctk.CTk):
             if not pmids:
                 raise ValueError("No valid PubMed IDs found.")
             cli_args.append("--pubmed-ids={}".format(",".join(pmids)))
+
+        elif active_tab == "Mixed Batch":
+            mixed_file = self.mixed_file_entry.get().strip()
+            if not mixed_file:
+                raise ValueError("Select a mixed list file for Mixed Batch mode.")
+            if not os.path.isfile(mixed_file):
+                raise ValueError("The selected mixed file does not exist: {}".format(mixed_file))
+            cli_args.append("--mixed-file={}".format(mixed_file))
 
         min_year = self._parse_integer(self.min_year_entry.get(), "Min Year")
         if min_year is not None:

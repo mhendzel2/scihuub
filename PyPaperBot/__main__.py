@@ -124,6 +124,8 @@ def main():
                         help='Boolean query to search bioRxiv preprints via Europe PMC')
     parser.add_argument('--pubmed-results', type=int, default=50,
                         help='Maximum results from PubMed or bioRxiv search (default 50, max 500)')
+    parser.add_argument('--mixed-file', type=str, default=None,
+                        help='File .txt containing a mix of DOIs, PMIDs, and queries')
     args = parser.parse_args()
 
     if args.single_proxy is not None:
@@ -139,11 +141,11 @@ def main():
 
     _sources = [
         args.query, args.doi_file, args.doi, args.cites,
-        args.pubmed_query, args.pubmed_ids, args.biorxiv_query,
+        args.pubmed_query, args.pubmed_ids, args.biorxiv_query, args.mixed_file
     ]
     if all(s is None for s in _sources):
         print("Error: provide at least one of --query, --doi-file, --doi, --cites, "
-              "--pubmed-query, --pubmed-ids, or --biorxiv-query")
+              "--pubmed-query, --pubmed-ids, --biorxiv-query, or --mixed-file")
         sys.exit()
     if sum(s is not None for s in _sources) > 1:
         print("Error: only one search/download source may be used at a time")
@@ -204,7 +206,7 @@ def main():
     if args.pubmed_query is not None:
         from .BioSearch import search_pubmed
         print("Searching PubMed: {}".format(args.pubmed_query))
-        records = search_pubmed(args.pubmed_query, max_results=min(args.pubmed_results, 500))
+        records = search_pubmed(args.pubmed_query, max_results=min(args.pubmed_results, 100000))
         DOIs = [r["doi"] for r in records if r["doi"]]
         skipped = len(records) - len(DOIs)
         if skipped:
@@ -231,12 +233,45 @@ def main():
     if args.biorxiv_query is not None:
         from .BioSearch import search_biorxiv
         print("Searching bioRxiv: {}".format(args.biorxiv_query))
-        records = search_biorxiv(args.biorxiv_query, max_results=min(args.pubmed_results, 500))
+        records = search_biorxiv(args.biorxiv_query, max_results=min(args.pubmed_results, 100000))
         DOIs = [r["doi"] for r in records if r["doi"]]
         if not DOIs:
             print("Error: No bioRxiv preprints found for the given query.")
             sys.exit()
         print("Found {} bioRxiv preprints.".format(len(DOIs)))
+
+    if args.mixed_file is not None:
+        if DOIs is None:
+            DOIs = []
+        from .BioSearch import pmids_to_records, search_pubmed
+        pmids_to_process = []
+        f = args.mixed_file.replace('\\', '/')
+        with open(f) as file_in:
+            for line in file_in:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('10.'):
+                    DOIs.append(line)
+                elif line.isdigit():
+                    pmids_to_process.append(line)
+                else:
+                    print("Searching PubMed for mixed query: {}".format(line))
+                    records = search_pubmed(line, max_results=min(args.pubmed_results, 100000))
+                    new_dois = [r["doi"] for r in records if r["doi"]]
+                    DOIs.extend(new_dois)
+                    print("Found {} DOIs for query '{}'".format(len(new_dois), line))
+
+        if pmids_to_process:
+            print("Converting {} PubMed IDs from mixed file to DOIs...".format(len(pmids_to_process)))
+            records = pmids_to_records(pmids_to_process)
+            new_dois = [r["doi"] for r in records if r["doi"]]
+            DOIs.extend(new_dois)
+            print("Resolved {} DOIs from PMIDs.".format(len(new_dois)))
+
+        if not DOIs:
+            print("Error: No valid DOIs or PMIDs/Queries found in the mixed file.")
+            sys.exit()
 
     max_dwn = None
     max_dwn_type = None

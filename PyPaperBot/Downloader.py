@@ -88,7 +88,7 @@ def downloadPapers(papers, dwnl_dir, num_limit, SciHub_URL=None, SciDB_URL=None)
                         dwn_source = 3
 
                     if url != "":
-                        r = requests.get(url, headers=NetInfo.HEADERS)
+                        r = requests.get(url, headers=NetInfo.HEADERS, timeout=60)
                         content_type = r.headers.get('content-type')
 
                         if (dwn_source == 1 or dwn_source == 2) and 'application/pdf' not in content_type and "application/octet-stream" not in content_type:
@@ -96,12 +96,12 @@ def downloadPapers(papers, dwnl_dir, num_limit, SciHub_URL=None, SciDB_URL=None)
 
                             pdf_link = getSchiHubPDF(r.text)
                             if pdf_link is not None:
-                                r = requests.get(pdf_link, headers=NetInfo.HEADERS)
+                                r = requests.get(pdf_link, headers=NetInfo.HEADERS, timeout=60)
                                 content_type = r.headers.get('content-type')
 
                         if 'application/pdf' in content_type or "application/octet-stream" in content_type:
                             paper_files.append(saveFile(pdf_dir, r.content, p, dwn_source))
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Failed to download via source {dwn_source}: {e}")
 
                 failed += 1
