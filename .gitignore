@@ -131,6 +131,3 @@ dmypy.json
 #Visual studio settings
 .vs
 .vscode
-
-# PyPaperBot download output directories
-test_dwn/
