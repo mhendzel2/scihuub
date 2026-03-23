@@ -123,9 +123,9 @@ def main():
     parser.add_argument('--biorxiv-query', type=str, default=None,
                         help='Boolean query to search bioRxiv preprints via Europe PMC')
     parser.add_argument('--pubmed-results', type=int, default=50,
-                        help='Maximum results from PubMed or bioRxiv search (default 50, max 100000)')
+                        help='Maximum results from PubMed or bioRxiv search (default 50, max 500)')
     parser.add_argument('--mixed-file', type=str, default=None,
-                        help='File (.txt or .csv) containing a mix of DOIs, PMIDs, and queries')
+                        help='File .txt containing a mix of DOIs, PMIDs, and queries')
     args = parser.parse_args()
 
     if args.single_proxy is not None:
