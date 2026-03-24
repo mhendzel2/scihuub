@@ -6,6 +6,7 @@ Created on Sun Jun  7 11:59:42 2020
 """
 from bs4 import BeautifulSoup
 import re
+from urllib.parse import urljoin
 
 
 def schoolarParser(html):
@@ -69,7 +70,7 @@ def isBook(tag):
     return result
 
 
-def getSchiHubPDF(html):
+def getSchiHubPDF(html, base_url=None):
     result = None
     soup = BeautifulSoup(html, "html.parser")
 
@@ -77,6 +78,7 @@ def getSchiHubPDF(html):
     plugin = soup.find(id='plugin') #scihub logic
     download_scidb = soup.find("a", text=lambda text: text and "Download" in text, href=re.compile(r"\.pdf$")) #scidb logic
     embed_scihub = soup.find("embed") #scihub logic
+    object_pdf = soup.find("object", attrs={"type": "application/pdf"}) #newer scihub logic
 
     if iframe is not None:
         result = iframe.get("src")
@@ -84,8 +86,17 @@ def getSchiHubPDF(html):
     if plugin is not None and result is None:
         result = plugin.get("src")
 
+    if object_pdf is not None and result is None:
+        result = object_pdf.get("data")
+        if result is not None:
+            # Strip fragment (e.g. #navpanes=0&view=FitH)
+            result = result.split("#")[0]
+
     if result is not None and result[0] != "h":
-        result = "https:" + result
+        if base_url and result[0] == "/" and not result.startswith("//"):
+            result = urljoin(base_url, result)
+        else:
+            result = "https:" + result
 
     if download_scidb is not None and result is None:
         result = download_scidb.get("href")

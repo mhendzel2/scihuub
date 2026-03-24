@@ -80,6 +80,8 @@ class Paper:
                 dwn_from = "SciHub"
             elif p.downloadedFrom == 3:
                 dwn_from = "Scholar"
+            elif p.downloadedFrom == 4:
+                dwn_from = "Unpaywall"
 
             # Append row data as a dictionary
             data.append({

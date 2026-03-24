@@ -50,6 +50,35 @@ pip install PyPaperbot
 
 ## How to use
 
+## Local GUI Wrapper
+
+A standalone desktop wrapper is available at `gui.py` for local use. It does not refactor the downloader internals; instead it launches an isolated child process that dispatches into the existing PyPaperBot CLI and streams the output into a live console so the UI stays responsive and can stop a stuck run.
+
+Install the GUI dependency locally:
+
+```bash
+pip install customtkinter
+```
+
+Launch the GUI from the repository root:
+
+```bash
+python gui.py
+```
+
+The GUI exposes the current CLI workflows for keyword search, single DOI download, DOI batch files, download directory selection, year-based filters, mirror overrides, proxy settings, and live process control.
+
+## Standalone Build
+
+To create a distributable desktop binary, install the runtime dependencies plus the GUI/build tools in your build environment and package the GUI entrypoint:
+
+```bash
+pip install -r requirements.txt customtkinter pyinstaller
+pyinstaller --noconsole --onefile gui.py
+```
+
+PyInstaller writes the packaged artifact to `dist/`. The output format depends on the platform used for the build: Windows builds produce `.exe`, macOS builds produce `.app`, and Linux builds produce a native Linux binary.
+
 PyPaperBot arguments:
 
 | Arguments                   | Description                                                                                                                                                                           | Type   |

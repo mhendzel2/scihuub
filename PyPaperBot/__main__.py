@@ -27,7 +27,7 @@ def checkVersion():
 
 def start(query, scholar_results, scholar_pages, dwn_dir, proxy, min_date=None, num_limit=None, num_limit_type=None,
           filter_jurnal_file=None, restrict=None, DOIs=None, SciHub_URL=None, chrome_version=None, cites=None,
-          use_doi_as_filename=False, SciDB_URL=None, skip_words=None):
+          use_doi_as_filename=False, SciDB_URL=None, skip_words=None, unpaywall_email=None):
 
     if SciDB_URL is not None and "/scidb" not in SciDB_URL:
         SciDB_URL = urljoin(SciDB_URL, "/scidb/")
@@ -64,7 +64,7 @@ def start(query, scholar_results, scholar_pages, dwn_dir, proxy, min_date=None, 
         if num_limit_type is not None and num_limit_type == 1:
             to_download.sort(key=lambda x: int(x.cites_num) if x.cites_num is not None else 0, reverse=True)
 
-        downloadPapers(to_download, dwn_dir, num_limit, SciHub_URL, SciDB_URL)
+        downloadPapers(to_download, dwn_dir, num_limit, SciHub_URL, SciDB_URL, unpaywall_email)
 
     Paper.generateReport(to_download, dwn_dir + "result.csv")
     Paper.generateBibtex(to_download, dwn_dir + "bibtex.bib")
@@ -75,7 +75,8 @@ def main():
         """PyPaperBot is a Python tool for downloading scientific papers using Google Scholar, Crossref and SciHub.
         -Join the telegram channel to stay updated --> https://t.me/pypaperbotdatawizards <--
         -If you like this project, you can share a cup of coffee at --> https://www.paypal.com/paypalme/ferru97 <-- :)\n""")
-    time.sleep(4)
+    if os.environ.get("PYPAPERBOT_GUI") != "1":
+        time.sleep(4)
     parser = argparse.ArgumentParser(
         description='PyPaperBot is python tool to search and dwonload scientific papers using Google Scholar, Crossref and SciHub')
     parser.add_argument('--query', type=str, default=None,
@@ -106,8 +107,8 @@ def main():
                         help='Mirror for downloading papers from sci-hub. If not set, it is selected automatically')
     parser.add_argument('--annas-archive-mirror', default=None, type=str,
                         help='Mirror for downloading papers from Annas Archive (SciDB). If not set, https://annas-archive.se is used')
-    parser.add_argument('--scholar-results', default=10, type=int, choices=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                        help='Downloads the first x results for each scholar page(default/max=10)')
+    parser.add_argument('--scholar-results', default=10, type=int,
+                        help='Results per Scholar page (default 10, max 10 — set scholar-pages to fetch more total results)')
     parser.add_argument('--proxy', nargs='+', default=[],
                         help='Use proxychains, provide a seperated list of proxies to use.Please specify the argument al the end')
     parser.add_argument('--single-proxy', type=str, default=None,
@@ -116,6 +117,18 @@ def main():
                         help='First three digits of the chrome version installed on your machine. If provided, selenium will be used for scholar search. It helps avoid bot detection but chrome must be installed.')
     parser.add_argument('--use-doi-as-filename', action='store_true', default=False,
                         help='Use DOIs as output file names')
+    parser.add_argument('--pubmed-query', type=str, default=None,
+                        help='Boolean query for PubMed (supports AND, OR, NOT, field tags e.g. [ti], [tiab], [mh])')
+    parser.add_argument('--pubmed-ids', type=str, default=None,
+                        help='Comma-separated PubMed IDs (PMIDs) to convert to DOIs and download')
+    parser.add_argument('--biorxiv-query', type=str, default=None,
+                        help='Boolean query to search bioRxiv preprints via Europe PMC')
+    parser.add_argument('--pubmed-results', type=int, default=50,
+                        help='Maximum results from PubMed or bioRxiv search (default 50, max 100000)')
+    parser.add_argument('--mixed-file', type=str, default=None,
+                        help='File (.txt or .csv) containing a mix of DOIs, PMIDs, and queries')
+    parser.add_argument('--unpaywall-email', type=str, default=None,
+                        help='Email for Unpaywall API to find free legal open-access PDFs (tried before SciHub)')
     args = parser.parse_args()
 
     if args.single_proxy is not None:
@@ -129,13 +142,16 @@ def main():
         pchain = args.proxy
         proxy(pchain)
 
-    if args.query is None and args.doi_file is None and args.doi is None and args.cites is None:
-        print("Error, provide at least one of the following arguments: --query, --file, or --cites")
+    _sources = [
+        args.query, args.doi_file, args.doi, args.cites,
+        args.pubmed_query, args.pubmed_ids, args.biorxiv_query, args.mixed_file
+    ]
+    if all(s is None for s in _sources):
+        print("Error: provide at least one of --query, --doi-file, --doi, --cites, "
+              "--pubmed-query, --pubmed-ids, --biorxiv-query, or --mixed-file")
         sys.exit()
-
-    if (args.query is not None and args.doi_file is not None) or (args.query is not None and args.doi is not None) or (
-            args.doi is not None and args.doi_file is not None):
-        print("Error: Only one option between '--query', '--doi-file' and '--doi' can be used")
+    if sum(s is not None for s in _sources) > 1:
+        print("Error: only one search/download source may be used at a time")
         sys.exit()
 
     if args.dwn_dir is None:
@@ -190,6 +206,76 @@ def main():
     if args.doi is not None:
         DOIs = [args.doi]
 
+    if args.pubmed_query is not None:
+        from .BioSearch import search_pubmed
+        print("Searching PubMed: {}".format(args.pubmed_query))
+        records = search_pubmed(args.pubmed_query, max_results=min(args.pubmed_results, 100000))
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        skipped = len(records) - len(DOIs)
+        if skipped:
+            print("Warning: {} records skipped (no DOI found).".format(skipped))
+        if not DOIs:
+            print("Error: No papers with DOIs found for the given PubMed query.")
+            sys.exit()
+        print("Found {} papers with DOIs.".format(len(DOIs)))
+
+    if args.pubmed_ids is not None:
+        from .BioSearch import pmids_to_records
+        pmids = [p.strip() for p in args.pubmed_ids.replace(',', ' ').split() if p.strip()]
+        print("Converting {} PubMed IDs to DOIs...".format(len(pmids)))
+        records = pmids_to_records(pmids)
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        skipped = len(records) - len(DOIs)
+        if skipped:
+            print("Warning: {} PMIDs had no DOI and will be skipped.".format(skipped))
+        if not DOIs:
+            print("Error: None of the provided PubMed IDs could be resolved to a DOI.")
+            sys.exit()
+        print("Resolved {} DOIs.".format(len(DOIs)))
+
+    if args.biorxiv_query is not None:
+        from .BioSearch import search_biorxiv
+        print("Searching bioRxiv: {}".format(args.biorxiv_query))
+        records = search_biorxiv(args.biorxiv_query, max_results=min(args.pubmed_results, 100000))
+        DOIs = [r["doi"] for r in records if r["doi"]]
+        if not DOIs:
+            print("Error: No bioRxiv preprints found for the given query.")
+            sys.exit()
+        print("Found {} bioRxiv preprints.".format(len(DOIs)))
+
+    if args.mixed_file is not None:
+        if DOIs is None:
+            DOIs = []
+        from .BioSearch import pmids_to_records, search_pubmed
+        pmids_to_process = []
+        f = args.mixed_file.replace('\\', '/')
+        with open(f) as file_in:
+            for line in file_in:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('10.'):
+                    DOIs.append(line)
+                elif line.isdigit():
+                    pmids_to_process.append(line)
+                else:
+                    print("Searching PubMed for mixed query: {}".format(line))
+                    records = search_pubmed(line, max_results=min(args.pubmed_results, 100000))
+                    new_dois = [r["doi"] for r in records if r["doi"]]
+                    DOIs.extend(new_dois)
+                    print("Found {} DOIs for query '{}'".format(len(new_dois), line))
+
+        if pmids_to_process:
+            print("Converting {} PubMed IDs from mixed file to DOIs...".format(len(pmids_to_process)))
+            records = pmids_to_records(pmids_to_process)
+            new_dois = [r["doi"] for r in records if r["doi"]]
+            DOIs.extend(new_dois)
+            print("Resolved {} DOIs from PMIDs.".format(len(new_dois)))
+
+        if not DOIs:
+            print("Error: No valid DOIs or PMIDs/Queries found in the mixed file.")
+            sys.exit()
+
     max_dwn = None
     max_dwn_type = None
     if args.max_dwn_year is not None:
@@ -202,7 +288,7 @@ def main():
 
     start(args.query, args.scholar_results, scholar_pages, dwn_dir, proxy, args.min_year , max_dwn, max_dwn_type ,
           args.journal_filter, args.restrict, DOIs, args.scihub_mirror, args.selenium_chrome_version, args.cites,
-          args.use_doi_as_filename, args.annas_archive_mirror, args.skip_words)
+          args.use_doi_as_filename, args.annas_archive_mirror, args.skip_words, args.unpaywall_email)
 
 if __name__ == "__main__":
     checkVersion()
